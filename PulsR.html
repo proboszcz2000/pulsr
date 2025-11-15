@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Notowanie głosowe (lokalne)</title>
+
+<style>
+    body {
+        font-family: "Roboto", sans-serif;
+        background: #fafafa;
+        color: #222;
+        text-align: center;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+    }
+    button {
+        background: #1a73e8;
+        color: white;
+        border: none;
+        padding: 20px 40px;
+        font-size: 1.8em;
+        border-radius: 12px;
+        cursor: pointer;
+        width: 85%;
+        max-width: 350px;
+    }
+    button:hover {
+        background: #1558b0;
+    }
+    h2 { margin-bottom: 10px; }
+    p { font-size: 1.4em; padding: 0 20px; }
+    #status { margin-top: 25px; font-size: 1.3em; width: 90%; }
+</style>
+</head>
+
+<body>
+<h2>🎤 Notowanie głosowe</h2>
+<p>Dotknij przycisku i powiedz trzy liczby (np. „12, 45, 89”).</p>
+
+<button id="recordBtn">🎙️ Nagraj głos</button>
+<div id="status"></div>
+
+<script>
+const statusEl = document.getElementById("status");
+const btn = document.getElementById("recordBtn");
+
+// ===== TU WKLEJ SWÓJ WEBAPP URL (kończący się na /exec) =====
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0otbzQ_ggRuE2PevYBJ3AhwV1H7zQemXtu0206fi-1ijtxTAeSg/exec";
+
+btn.addEventListener("click", startRec);
+
+async function startRec() {
+    // check microphone access
+    try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+        statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
+        return;
+    }
+
+    // check browser support
+    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+        statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
+        return;
+    }
+
+    // start recognition
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "pl-PL";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.start();
+    statusEl.textContent = "🎧 Nasłuchiwanie...";
+
+    recognition.onresult = (event) => {
+        const text = event.results[0][0].transcript;
+        const nums = text.match(/\d+/g);
+
+        if (!nums || nums.length < 3) {
+            statusEl.textContent = "❌ Nie rozpoznano trzech liczb. Spróbuj ponownie.";
+            return;
+        }
+
+        const [n1, n2, n3] = nums;
+        statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3} — zapisuję...`;
+
+        sendToSheet(n1, n2, n3);
+    };
+
+    recognition.onerror = (err) => {
+        statusEl.textContent = "❌ Błąd rozpoznawania mowy: " + err.error;
+    };
+}
+
+function sendToSheet(a, b, c) {
+    fetch(WEBAPP_URL + `?n1=${a}&n2=${b}&n3=${c}`)
+        .then(r => r.text())
+        .then(resp => {
+            statusEl.innerHTML = `✅ Zapisano w arkuszu!<br><br><a href="${resp}" target="_blank">📄 Otwórz arkusz</a>`;
+        })
+        .catch(err => {
+            statusEl.textContent = "❌ Błąd połączenia: " + err;
+        });
+}
+</script>
+
+</body>
+</html>

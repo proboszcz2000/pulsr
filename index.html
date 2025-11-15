@@ -1,0 +1,160 @@
+<!DOCTYPE html> 
+<!-- Deklaracja typu dokumentu HTML5 -->
+
+<html lang="pl">
+<!-- Język dokumentu ustawiony na polski -->
+
+<head>
+<meta charset="UTF-8" />
+<!-- Kodowanie znaków: UTF-8 (obsługa polskich liter) -->
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- Skalowanie dla ekranów telefonów (responsywność) -->
+
+<title>Notowanie głosowe (lokalne)</title>
+<!-- Tytuł strony -->
+
+<style>
+    /* Ustawienia wyglądu całej strony */
+    body {
+        font-family: "Roboto", sans-serif;   /* czcionka */
+        background: #fafafa;                 /* jasnoszare tło */
+        color: #222;                         /* ciemny tekst */
+        text-align: center;                  /* wyśrodkowanie tekstu */
+        margin: 0;
+        padding: 0;
+        display: flex;                       /* użycie flexbox */
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;                       /* cała wysokość okna */
+    }
+
+    /* Wygląd przycisku nagrywania */
+    button {
+        background: #1a73e8;                 /* niebieskie tło */
+        color: white;                        /* biały tekst */
+        border: none;
+        padding: 20px 40px;
+        font-size: 1.8em;                    /* duży napis */
+        border-radius: 12px;                 /* zaokrąglenie rogów */
+        cursor: pointer;                     /* rączka po najechaniu */
+        width: 85%;
+        max-width: 350px;
+    }
+
+    /* Kolor po najechaniu myszką */
+    button:hover {
+        background: #1558b0;
+    }
+
+    /* Uporządkowanie tekstów */
+    h2 { margin-bottom: 10px; }
+    p { font-size: 1.4em; padding: 0 20px; }
+    #status { margin-top: 25px; font-size: 1.3em; width: 90%; }
+</style>
+</head>
+
+<body>
+<!-- Zawartość widoczna na stronie -->
+
+<h2>🎤 Notowanie głosowe</h2>
+<!-- Tytuł sekcji -->
+
+<p>Dotknij przycisku i powiedz trzy liczby (np. „12, 45, 89”).</p>
+<!-- Instrukcja dla użytkownika -->
+
+<button id="recordBtn">🎙️ Nagraj głos</button>
+<!-- Główny przycisk uruchamiający rozpoznawanie mowy -->
+
+<div id="status"></div>
+<!-- Tu wyświetlane są komunikaty z działania aplikacji -->
+
+<script>
+/* ==== Pobranie elementów HTML do zmiennych ==== */
+const statusEl = document.getElementById("status");  // miejsce na komunikaty
+const btn = document.getElementById("recordBtn");    // przycisk nagrywania
+
+/* === Wklejasz tutaj swój link do WebApp Google Apps Script === */
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0otbzQ_ggRuE2PevYBJ3AhwV1H7zQemXtu0206fi-1ijtxTAeSg/exec";
+
+/* ==== Nasłuchiwanie kliknięcia przycisku ==== */
+btn.addEventListener("click", startRec);
+
+/* ================================================================
+   FUNKCJA startRec — uruchamia rozpoznawanie mowy
+================================================================ */
+async function startRec() {
+
+    // Sprawdzenie, czy przeglądarka pozwala użyć mikrofonu
+    try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+        statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
+        return; // nie kontynuujemy
+    }
+
+    // Sprawdzenie, czy przeglądarka obsługuje Web Speech API
+    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+        statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
+        return;
+    }
+
+    // Utworzenie obiektu rozpoznawania mowy
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "pl-PL";           // język rozpoznawania
+    recognition.interimResults = false;   // bez wyników „na żywo”
+    recognition.maxAlternatives = 1;      // tylko najlepszy wynik
+
+    recognition.start();                  // uruchom nasłuchiwanie
+    statusEl.textContent = "🎧 Nasłuchiwanie...";
+
+    /* === Po udanym rozpoznaniu === */
+    recognition.onresult = (event) => {
+        const text = event.results[0][0].transcript;   // rozpoznany tekst
+        const nums = text.match(/\d+/g);               // znajdź wszystkie liczby
+
+        // Jeżeli nie ma 3 liczb → błąd
+        if (!nums || nums.length < 3) {
+            statusEl.textContent = "❌ Nie rozpoznano trzech liczb. Spróbuj ponownie.";
+            return;
+        }
+
+        // Wyciągamy pierwsze trzy liczby
+        const [n1, n2, n3] = nums;
+
+        // Informacja dla użytkownika
+        statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3} — zapisuję...`;
+
+        // Wysyłamy dane do arkusza
+        sendToSheet(n1, n2, n3);
+    };
+
+    /* === Obsługa błędów rozpoznawania === */
+    recognition.onerror = (err) => {
+        statusEl.textContent = "❌ Błąd rozpoznawania mowy: " + err.error;
+    };
+}
+
+/* ================================================================
+   FUNKCJA sendToSheet — wysyła liczby do Google Apps Script
+================================================================ */
+function sendToSheet(a, b, c) {
+
+    // Wysyłamy dane GET-em do WEBAPP_URL
+    fetch(WEBAPP_URL + `?n1=${a}&n2=${b}&n3=${c}`)
+        .then(r => r.text())      // odbiór odpowiedzi jako tekst
+        .then(resp => {
+            // Wyświetlamy komunikat o sukcesie
+            statusEl.innerHTML = `✅ Zapisano w arkuszu!<br><br>
+            <a href="${resp}" target="_blank">📄 Otwórz arkusz</a>`;
+        })
+        .catch(err => {
+            // Obsługa błędu połączenia
+            statusEl.textContent = "❌ Błąd połączenia: " + err;
+        });
+}
+</script>
+
+</body>
+</html>

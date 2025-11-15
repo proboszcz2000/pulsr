@@ -29,9 +29,15 @@
         cursor: pointer;
         width: 85%;
         max-width: 350px;
+        transition: background 0.3s;
     }
     button:hover {
         background: #1558b0;
+    }
+    /* 🛠️ DODANO: Styl dla zablokowanego przycisku */
+    button:disabled {
+        background: #aab8c2;
+        cursor: default;
     }
     h2 { margin-bottom: 10px; }
     p { font-size: 1.4em; padding: 0 20px; }
@@ -44,7 +50,7 @@
 <p>Dotknij przycisk i powiedz trzy liczby (np. „120, 80, 70”).</p>
 
 <button id="recordBtn">🎙️ Nagraj głos</button>
-<div id="status"></div>
+<div id="status">Kliknij "Nagraj głos", aby rozpocząć.</div>
 
 <script>
 const statusEl = document.getElementById("status");
@@ -55,53 +61,9 @@ const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0o
 
 btn.addEventListener("click", startRec);
 
-async function startRec() {
-    // check microphone access
-    try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-        statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
-        return;
-    }
-
-    // check browser support
-    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-        statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
-        return;
-    }
-
-    // start recognition
-const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-recognition.lang = "pl-PL";
-recognition.interimResults = false;
-recognition.maxAlternatives = 1;
-recognition.continuous = false;
-
-recognition.start();
-statusEl.textContent = "🎧 Nasłuchiwanie...";
-
-recognition.onresult = (event) => {
-    const text = event.results[0][0].transcript;
-    const nums = text.match(/\d+/g);
-    if (!nums || nums.length < 3) {
-        statusEl.textContent = "❌ Nie rozpoznano trzech liczb.";
-        return;
-    }
-    const [n1,n2,n3] = nums;
-    statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3}`;
-    recognition.stop();  // upewniamy się, że kończy
-};
-
-recognition.onerror = (e) => {
-    statusEl.textContent = "❌ Błąd rozpoznawania: " + e.error;
-    recognition.stop();
-};
-
-// opcjonalnie timeout 5s
-setTimeout(() => {
-    recognition.stop();
-}, 5000);
+// Funkcja wysyłająca dane (przeniesiona poza startRec dla czytelności)
 function sendToSheet(a, b, c) {
+    statusEl.textContent = "Wysyłanie danych do arkusza...";
     fetch(WEBAPP_URL + `?n1=${a}&n2=${b}&n3=${c}`)
         .then(r => r.text())
         .then(resp => {
@@ -110,6 +72,82 @@ function sendToSheet(a, b, c) {
         .catch(err => {
             statusEl.textContent = "❌ Błąd połączenia: " + err;
         });
+}
+
+
+async function startRec() {
+    // 🛠️ DODANO: Blokada przycisku podczas nasłuchiwania
+    btn.disabled = true;
+
+    // check microphone access
+    try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+        statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
+        btn.disabled = false; // Odblokuj, jeśli nie ma dostępu
+        return;
+    }
+
+    // check browser support
+    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+        statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
+        btn.disabled = false; // Odblokuj, jeśli brak wsparcia
+        return;
+    }
+
+    // start recognition
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = "pl-PL";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false;
+
+    recognition.start();
+    statusEl.textContent = "🎧 Nasłuchiwanie...";
+
+    recognition.onresult = (event) => {
+        const text = event.results[0][0].transcript;
+        // Używamy bardziej liberalnego regexa, aby uwzględnić np. "sto dwadzieścia"
+        const nums = text.match(/\d+/g); 
+        
+        if (!nums || nums.length < 3) {
+            statusEl.textContent = "❌ Nie rozpoznano trzech liczb. Spróbuj ponownie.";
+            recognition.stop();
+            return;
+        }
+        
+        const [n1, n2, n3] = nums;
+        statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3}. Trwa zapis...`;
+        
+        // 🛠️ POPRAWIONO: Wywołanie funkcji wysyłającej dane
+        sendToSheet(n1, n2, n3);
+
+        // Nie wywołujemy tu recognition.stop(), ponieważ zdarzenie onend załatwi odblokowanie przycisku
+    };
+
+    recognition.onerror = (e) => {
+        statusEl.textContent = "❌ Błąd rozpoznawania: " + e.error;
+        recognition.stop();
+    };
+
+    // 🛠️ DODANO: Obsługa końca nasłuchiwania - kluczowa do odblokowania przycisku
+    recognition.onend = () => {
+        // Upewniamy się, że przycisk jest odblokowany, niezależnie od wyniku
+        btn.disabled = false; 
+        
+        // Jeśli nie udało się zapisać, resetujemy status na zachętę do nagrania
+        if (!statusEl.textContent.includes("Zapisano") && !statusEl.textContent.includes("Błąd połączenia")) {
+             statusEl.textContent = "Kliknij "Nagraj głos", aby nagrać ponownie.";
+        }
+    };
+
+    // Opcjonalnie timeout 5s (zmieniono na 8s dla bezpieczeństwa mobilnego)
+    setTimeout(() => {
+        // Jeśli rozpoznawanie ciągle działa (np. nic nie powiedziano), zatrzymaj je
+        if (btn.disabled === true) {
+            recognition.stop();
+        }
+    }, 8000);
 }
 </script>
 

@@ -71,35 +71,36 @@ async function startRec() {
     }
 
     // start recognition
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = "pl-PL";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = false;
+const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+recognition.lang = "pl-PL";
+recognition.interimResults = false;
+recognition.maxAlternatives = 1;
+recognition.continuous = false;
 
-    recognition.start();
-    statusEl.textContent = "🎧 Nasłuchiwanie...";
+recognition.start();
+statusEl.textContent = "🎧 Nasłuchiwanie...";
 
-    recognition.onresult = (event) => {
-        const text = event.results[0][0].transcript;
-        const nums = text.match(/\d+/g);
+recognition.onresult = (event) => {
+    const text = event.results[0][0].transcript;
+    const nums = text.match(/\d+/g);
+    if (!nums || nums.length < 3) {
+        statusEl.textContent = "❌ Nie rozpoznano trzech liczb.";
+        return;
+    }
+    const [n1,n2,n3] = nums;
+    statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3}`;
+    recognition.stop();  // upewniamy się, że kończy
+};
 
-        if (!nums || nums.length < 3) {
-            statusEl.textContent = "❌ Nie rozpoznano trzech liczb. Spróbuj ponownie.";
-            return;
-        }
+recognition.onerror = (e) => {
+    statusEl.textContent = "❌ Błąd rozpoznawania: " + e.error;
+    recognition.stop();
+};
 
-        const [n1, n2, n3] = nums;
-        statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3} — zapisuję...`;
-
-        sendToSheet(n1, n2, n3);
-    };
-
-    recognition.onerror = (err) => {
-        statusEl.textContent = "❌ Błąd rozpoznawania mowy: " + err.error;
-    };
-}
-
+// opcjonalnie timeout 5s
+setTimeout(() => {
+    recognition.stop();
+}, 5000);
 function sendToSheet(a, b, c) {
     fetch(WEBAPP_URL + `?n1=${a}&n2=${b}&n3=${c}`)
         .then(r => r.text())

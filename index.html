@@ -61,7 +61,7 @@
 <h2>🎤 Notowanie głosowe</h2>
 <!-- Tytuł sekcji -->
 
-<p>Dotknij przycisku i powiedz trzy liczby (np. „12, 45, 89”).</p>
+<p>Dotknij przycisku i powiedz trzy liczby (np. „120, 45, 89”).</p>
 <!-- Instrukcja dla użytkownika -->
 
 <button id="recordBtn">🎙️ Nagraj głos</button>
@@ -86,55 +86,83 @@ btn.addEventListener("click", startRec);
 ================================================================ */
 async function startRec() {
 
-    // Sprawdzenie, czy przeglądarka pozwala użyć mikrofonu
-    try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-        statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
-        return; // nie kontynuujemy
-    }
+    let stream; // tu będzie przechowywany strumień z mikrofonu (audio)
 
-    // Sprawdzenie, czy przeglądarka obsługuje Web Speech API
-    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-        statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
+    try {
+        // 🔹 Prośba o dostęp do mikrofonu i uruchomienie fizycznego streamu
+        // Jeśli użytkownik kliknie "Zezwól", zwróci obiekt stream
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    } catch (e) {
+        // 🔹 Jeśli użytkownik odmówi dostępu do mikrofonu
+        statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
         return;
     }
 
-    // Utworzenie obiektu rozpoznawania mowy
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = "pl-PL";           // język rozpoznawania
-    recognition.interimResults = false;   // bez wyników „na żywo”
-    recognition.maxAlternatives = 1;      // tylko najlepszy wynik
+    // 🔹 Sprawdzamy, czy przeglądarka obsługuje Web Speech API
+    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+        statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
 
-    recognition.start();                  // uruchom nasłuchiwanie
+        // 🔹 Wyłączamy mikrofon, skoro i tak nie zadziała rozpoznawanie
+        stream.getTracks().forEach(track => track.stop());
+        return;
+    }
+
+    // 🔹 Tworzymy obiekt rozpoznawania mowy
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+
+    recognition.lang = "pl-PL";          // język rozpoznawania
+    recognition.interimResults = false;  // nie chcemy wyników pośrednich
+    recognition.maxAlternatives = 1;     // tylko najlepszy wynik
+
+    // 🔹 Start rozpoznawania
+    recognition.start();
     statusEl.textContent = "🎧 Nasłuchiwanie...";
 
-    /* === Po udanym rozpoznaniu === */
+    // ======== ZDARZENIE: OTRZYMALIŚMY WYNIK GŁOSOWY ========
     recognition.onresult = (event) => {
-        const text = event.results[0][0].transcript;   // rozpoznany tekst
-        const nums = text.match(/\d+/g);               // znajdź wszystkie liczby
 
-        // Jeżeli nie ma 3 liczb → błąd
+        // 🔹 Pełny tekst rozpoznany przez Google
+        const text = event.results[0][0].transcript;
+
+        // 🔹 Wyciągamy liczby z tekstu (np. z "12 45 89")
+        const nums = text.match(/\d+/g);
+
+        // 🔹 Jeśli nie wykryto 3 liczb — błąd
         if (!nums || nums.length < 3) {
             statusEl.textContent = "❌ Nie rozpoznano trzech liczb. Spróbuj ponownie.";
+
+            // Wyłączenie mikrofonu i rozpoznawania
+            stream.getTracks().forEach(track => track.stop());
+            recognition.stop();
             return;
         }
 
-        // Wyciągamy pierwsze trzy liczby
+        // 🔹 Pobieramy trzy liczby
         const [n1, n2, n3] = nums;
 
-        // Informacja dla użytkownika
         statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3} — zapisuję...`;
 
-        // Wysyłamy dane do arkusza
+        // 🔹 Po odebraniu wyniku NATYCHMIAST zatrzymujemy:
+        recognition.stop();                           // kończymy rozpoznawanie
+        stream.getTracks().forEach(track => track.stop());  // WYŁĄCZAMY mikrofon
+
+        // 🔹 Wysyłamy liczby do Google Sheet
         sendToSheet(n1, n2, n3);
     };
 
-    /* === Obsługa błędów rozpoznawania === */
+    // ======== ZDARZENIE: BŁĄD ROZPOZNAWANIA ========
     recognition.onerror = (err) => {
         statusEl.textContent = "❌ Błąd rozpoznawania mowy: " + err.error;
+
+        // 🔹 Wyłączamy mikrofon po błędzie
+        if (stream) stream.getTracks().forEach(track => track.stop());
+
+        // 🔹 Zatrzymujemy proces rozpoznawania
+        recognition.stop();
     };
 }
+
 
 /* ================================================================
    FUNKCJA sendToSheet — wysyła liczby do Google Apps Script

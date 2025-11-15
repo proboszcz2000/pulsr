@@ -1,153 +1,126 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Zanotuj wyniki</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notowanie głosowe (3 liczby)</title>
 
 <style>
-    body {
-        font-family: "Roboto", sans-serif;
-        background: #fafafa;
-        color: #222;
-        text-align: center;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-    }
-    button {
-        background: #1a73e8;
-        color: white;
-        border: none;
-        padding: 20px 40px;
-        font-size: 1.8em;
-        border-radius: 12px;
-        cursor: pointer;
-        width: 85%;
-        max-width: 350px;
-        transition: background 0.3s;
-    }
-    button:hover {
-        background: #1558b0;
-    }
-    /* 🛠️ DODANO: Styl dla zablokowanego przycisku */
-    button:disabled {
-        background: #aab8c2;
-        cursor: default;
-    }
-    h2 { margin-bottom: 10px; }
-    p { font-size: 1.4em; padding: 0 20px; }
-    #status { margin-top: 25px; font-size: 1.3em; width: 90%; }
+body {
+    font-family: Arial, sans-serif;
+    background: #fafafa;
+    text-align: center;
+    margin: 0; padding: 0;
+}
+h2 { font-size: 2em; margin-top: 20px; }
+p { font-size: 1.4em; }
+button {
+    background: #1a73e8;
+    color: white;
+    border: none;
+    padding: 20px 40px;
+    font-size: 1.6em;
+    border-radius: 12px;
+    cursor: pointer;
+    margin-top: 20px;
+}
+button:active { background: #1558b0; }
+#status {
+    margin-top: 25px;
+    font-size: 1.3em;
+    font-weight: 600;
+}
 </style>
 </head>
-
 <body>
+
 <h2>🎤 Notowanie głosowe</h2>
-<p>Dotknij przycisk i powiedz trzy liczby (np. „122, 80, 70”).</p>
+<p>Powiedz trzy liczby, np. "12, 45, 89".</p>
 
 <button id="recordBtn">🎙️ Nagraj głos</button>
-<div id="status">Kliknij "Nagraj głos", aby rozpocząć.</div>
+
+<div id="status"></div>
 
 <script>
-const statusEl = document.getElementById("status");
 const btn = document.getElementById("recordBtn");
-
-// ===== TU WKLEJ SWÓJ WEBAPP URL (kończący się na /exec) =====
+const statusEl = document.getElementById("status");
 const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0otbzQ_ggRuE2PevYBJ3AhwV1H7zQemXtu0206fi-1ijtxTAeSg/exec";
 
+    
 btn.addEventListener("click", startRec);
+btn.addEventListener("touchstart", (e) => { e.preventDefault(); startRec(); });
 
-// Funkcja wysyłająca dane (przeniesiona poza startRec dla czytelności)
-function sendToSheet(a, b, c) {
-    statusEl.textContent = "Wysyłanie danych do arkusza...";
-    fetch(WEBAPP_URL + `?n1=${a}&n2=${b}&n3=${c}`)
-        .then(r => r.text())
-        .then(resp => {
-            statusEl.innerHTML = `✅ Zapisano w arkuszu!<br><br><a href="${resp}" target="_blank">📄 Otwórz arkusz</a>`;
-        })
-        .catch(err => {
-            statusEl.textContent = "❌ Błąd połączenia: " + err;
-        });
-}
-
-
-async function startRec() {
-    // 🛠️ DODANO: Blokada przycisku podczas nasłuchiwania
-   // btn.disabled = true;
-
-    // check microphone access
+async function requestMic() {
     try {
         await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
+    } catch {
         statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
-        btn.disabled = false; // Odblokuj, jeśli nie ma dostępu
-        return;
+        throw new Error();
     }
+}
 
-    // check browser support
+async function startRec() {
+    await requestMic();
+
     if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
         statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
-        btn.disabled = false; // Odblokuj, jeśli brak wsparcia
         return;
     }
 
-    // start recognition
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = "pl-PL";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.continuous = false;
+    recognition.continuous = false;  // <<< KLUCZOWE NA ANDROIDZIE
 
+    statusEl.textContent = "🎧 Nasłuchiwanie... Mów teraz.";
+    recognition.finished = false;
+
+    // Start
     recognition.start();
-    statusEl.textContent = "🎧 Nasłuchiwanie...";
+
+    // 🔥 Najważniejsze: Android Chrome czasami NIE kończy sam → timeout 6s
+    let timeout = setTimeout(() => {
+        if (!recognition.finished) {
+            recognition.stop();
+            statusEl.textContent = "⌛ Czas minął. Spróbuj jeszcze raz.";
+        }
+    }, 6000);
 
     recognition.onresult = (event) => {
+        recognition.finished = true;
+        clearTimeout(timeout);
+
         const text = event.results[0][0].transcript;
-        // Używamy bardziej liberalnego regexa, aby uwzględnić np. "sto dwadzieścia"
-        const nums = text.match(/\d+/g); 
-        
+        const nums = text.match(/\d+/g);
+
         if (!nums || nums.length < 3) {
-            statusEl.textContent = "❌ Nie rozpoznano trzech liczb. Spróbuj ponownie.";
-            recognition.stop();
+            statusEl.textContent = "❌ Nie rozpoznano trzech liczb.";
             return;
         }
-        
+
         const [n1, n2, n3] = nums;
-        statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3}. Trwa zapis...`;
-        
-        // 🛠️ POPRAWIONO: Wywołanie funkcji wysyłającej dane
-        sendToSheet(n1, n2, n3);
 
-        // Nie wywołujemy tu recognition.stop(), ponieważ zdarzenie onend załatwi odblokowanie przycisku
-    };
+        statusEl.innerHTML = `
+            Rozpoznano: <b>${n1}</b>, <b>${n2}</b>, <b>${n3}</b><br>
+            (tutaj możesz je wysłać do arkusza)
+        `;
 
-    recognition.onerror = (e) => {
-        statusEl.textContent = "❌ Błąd rozpoznawania: " + e.error;
         recognition.stop();
     };
 
-    // 🛠️ DODANO: Obsługa końca nasłuchiwania - kluczowa do odblokowania przycisku
-    recognition.onend = () => {
-        // Upewniamy się, że przycisk jest odblokowany, niezależnie od wyniku
-        btn.disabled = false; 
-        
-        // Jeśli nie udało się zapisać, resetujemy status na zachętę do nagrania
-        if (!statusEl.textContent.includes("Zapisano") && !statusEl.textContent.includes("Błąd połączenia")) {
-             statusEl.textContent = "Kliknij "Nagraj głos", aby nagrać ponownie.";
-        }
+    recognition.onerror = (e) => {
+        clearTimeout(timeout);
+        statusEl.textContent = "❌ Błąd: " + e.error;
+        recognition.stop();
     };
 
-    // Opcjonalnie timeout 5s (zmieniono na 8s dla bezpieczeństwa mobilnego)
-    setTimeout(() => {
-        // Jeśli rozpoznawanie ciągle działa (np. nic nie powiedziano), zatrzymaj je
-        if (btn.disabled === true) {
-            recognition.stop();
+    // Gdy Android zakończy, ale bez wyniku
+    recognition.onend = () => {
+        if (!recognition.finished) {
+            statusEl.textContent = "🎧 Nasłuchiwanie zakończone.";
         }
-    }, 8000);
+    };
 }
 </script>
 

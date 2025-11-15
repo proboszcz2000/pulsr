@@ -106,22 +106,26 @@ async function startRec() {
         recognition.stop();
 
         // 🔥 ZAPIS DO GOOGLE SHEETS
-        fetch(WEB_APP_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ n1, n2, n3 })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.status === "OK") {
-                statusEl.innerHTML = `✅ Zapisano w Google Sheets!`;
-            } else {
-                statusEl.textContent = "❌ Błąd zapisu: " + data.message;
-            }
-        })
-        .catch(err => {
-            statusEl.textContent = "❌ Błąd sieci: " + err;
-        });
+            fetch(WEB_APP_URL, {
+                method: "POST",
+                mode: "cors",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ n1, n2, n3 })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === "OK") {
+                    statusEl.innerHTML = `✅ Zapisano w Google Sheets!`;
+                } else {
+                    statusEl.textContent = "❌ Błąd serwera: " + data.message;
+                }
+            })
+            .catch(err => {
+                statusEl.textContent = "❌ Błąd sieci: " + err.message;
+            });
+
     };
 
     recognition.onerror = (e) => {

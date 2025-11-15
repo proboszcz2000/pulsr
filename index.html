@@ -35,18 +35,19 @@ button:active { background: #1558b0; }
 <body>
 
 <h2>🎤 Notowanie głosowe</h2>
-<p>Powiedz trzy liczby, np. "123, 80, 80".</p>
+<p>Powiedz trzy liczby, np. "12, 45, 89".</p>
 
 <button id="recordBtn">🎙️ Nagraj głos</button>
 
 <div id="status"></div>
 
 <script>
+// 🔥 WSTAW TU SWÓJ WEB APP URL Z GOOGLE SCRIPT:
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0otbzQ_ggRuE2PevYBJ3AhwV1H7zQemXtu0206fi-1ijtxTAeSg/exec";
+
 const btn = document.getElementById("recordBtn");
 const statusEl = document.getElementById("status");
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0otbzQ_ggRuE2PevYBJ3AhwV1H7zQemXtu0206fi-1ijtxTAeSg/exec";
 
-    
 btn.addEventListener("click", startRec);
 btn.addEventListener("touchstart", (e) => { e.preventDefault(); startRec(); });
 
@@ -63,7 +64,7 @@ async function startRec() {
     await requestMic();
 
     if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-        statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
+        statusEl.textContent = "❌ Twoja przeglądarka nie obsługuje rozpoznawania mowy.";
         return;
     }
 
@@ -71,19 +72,18 @@ async function startRec() {
     recognition.lang = "pl-PL";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.continuous = false;  // <<< KLUCZOWE NA ANDROIDZIE
+    recognition.continuous = false;
 
-    statusEl.textContent = "🎧 Nasłuchiwanie... Mów teraz.";
     recognition.finished = false;
+    statusEl.textContent = "🎧 Nasłuchiwanie... Mów teraz.";
 
-    // Start
     recognition.start();
 
-    // 🔥 Najważniejsze: Android Chrome czasami NIE kończy sam → timeout 6s
+    // ⏳ Android Chrome NIE KOŃCZY nasłuchiwania → timeout 6s
     let timeout = setTimeout(() => {
         if (!recognition.finished) {
             recognition.stop();
-            statusEl.textContent = "⌛ Czas minął. Spróbuj jeszcze raz.";
+            statusEl.textContent = "⌛ Czas minął. Spróbuj ponownie.";
         }
     }, 6000);
 
@@ -101,12 +101,27 @@ async function startRec() {
 
         const [n1, n2, n3] = nums;
 
-        statusEl.innerHTML = `
-            Rozpoznano: <b>${n1}</b>, <b>${n2}</b>, <b>${n3}</b><br>
-            (tutaj możesz je wysłać do arkusza)
-        `;
+        statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3}. Zapisuję...`;
 
         recognition.stop();
+
+        // 🔥 ZAPIS DO GOOGLE SHEETS
+        fetch(WEB_APP_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ n1, n2, n3 })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === "OK") {
+                statusEl.innerHTML = `✅ Zapisano w Google Sheets!`;
+            } else {
+                statusEl.textContent = "❌ Błąd zapisu: " + data.message;
+            }
+        })
+        .catch(err => {
+            statusEl.textContent = "❌ Błąd sieci: " + err;
+        });
     };
 
     recognition.onerror = (e) => {
@@ -115,10 +130,9 @@ async function startRec() {
         recognition.stop();
     };
 
-    // Gdy Android zakończy, ale bez wyniku
     recognition.onend = () => {
         if (!recognition.finished) {
-            statusEl.textContent = "🎧 Nasłuchiwanie zakończone.";
+            statusEl.textContent = "🎧 Zakończono nasłuchiwanie.";
         }
     };
 }

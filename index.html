@@ -1,144 +1,113 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Notowanie głosowe (3 liczby)</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Notowanie głosowe (lokalne)</title>
 
 <style>
-body {
-    font-family: Arial, sans-serif;
-    background: #fafafa;
-    text-align: center;
-    margin: 0; padding: 0;
-}
-h2 { font-size: 2em; margin-top: 20px; }
-p { font-size: 1.4em; }
-button {
-    background: #1a73e8;
-    color: white;
-    border: none;
-    padding: 20px 40px;
-    font-size: 1.6em;
-    border-radius: 12px;
-    cursor: pointer;
-    margin-top: 20px;
-}
-button:active { background: #1558b0; }
-#status {
-    margin-top: 25px;
-    font-size: 1.3em;
-    font-weight: 600;
-}
+    body {
+        font-family: "Roboto", sans-serif;
+        background: #fafafa;
+        color: #222;
+        text-align: center;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+    }
+    button {
+        background: #1a73e8;
+        color: white;
+        border: none;
+        padding: 20px 40px;
+        font-size: 1.8em;
+        border-radius: 12px;
+        cursor: pointer;
+        width: 85%;
+        max-width: 350px;
+    }
+    button:hover {
+        background: #1558b0;
+    }
+    h2 { margin-bottom: 10px; }
+    p { font-size: 1.4em; padding: 0 20px; }
+    #status { margin-top: 25px; font-size: 1.3em; width: 90%; }
 </style>
 </head>
-<body>
 
+<body>
 <h2>🎤 Notowanie głosowe</h2>
-<p>Powiedz trzy liczby, np. "12, 455, 89".</p>
+<p>Dotknij przycisku i powiedz trzy liczby (np. „12, 45, 89”).</p>
 
 <button id="recordBtn">🎙️ Nagraj głos</button>
-
 <div id="status"></div>
 
 <script>
-// 🔥 WSTAW TU SWÓJ WEB APP URL Z GOOGLE SCRIPT:
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0otbzQ_ggRuE2PevYBJ3AhwV1H7zQemXtu0206fi-1ijtxTAeSg/exec";
-
-const btn = document.getElementById("recordBtn");
 const statusEl = document.getElementById("status");
+const btn = document.getElementById("recordBtn");
+
+// ===== TU WKLEJ SWÓJ WEBAPP URL (kończący się na /exec) =====
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0otbzQ_ggRuE2PevYBJ3AhwV1H7zQemXtu0206fi-1ijtxTAeSg/exec";
 
 btn.addEventListener("click", startRec);
-btn.addEventListener("touchstart", (e) => { e.preventDefault(); startRec(); });
-
-async function requestMic() {
-    try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-        statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
-        throw new Error();
-    }
-}
 
 async function startRec() {
-    await requestMic();
-
-    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-        statusEl.textContent = "❌ Twoja przeglądarka nie obsługuje rozpoznawania mowy.";
+    // check microphone access
+    try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+        statusEl.textContent = "❌ Brak dostępu do mikrofonu.";
         return;
     }
 
+    // check browser support
+    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+        statusEl.textContent = "❌ Ta przeglądarka nie obsługuje rozpoznawania mowy.";
+        return;
+    }
+
+    // start recognition
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = "pl-PL";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.continuous = false;
-
-    recognition.finished = false;
-    statusEl.textContent = "🎧 Nasłuchiwanie... Mów teraz.";
 
     recognition.start();
-
-    // ⏳ Android Chrome NIE KOŃCZY nasłuchiwania → timeout 6s
-    let timeout = setTimeout(() => {
-        if (!recognition.finished) {
-            recognition.stop();
-            statusEl.textContent = "⌛ Czas minął. Spróbuj ponownie.";
-        }
-    }, 6000);
+    statusEl.textContent = "🎧 Nasłuchiwanie...";
 
     recognition.onresult = (event) => {
-        recognition.finished = true;
-        clearTimeout(timeout);
-
         const text = event.results[0][0].transcript;
         const nums = text.match(/\d+/g);
 
         if (!nums || nums.length < 3) {
-            statusEl.textContent = "❌ Nie rozpoznano trzech liczb.";
+            statusEl.textContent = "❌ Nie rozpoznano trzech liczb. Spróbuj ponownie.";
             return;
         }
 
         const [n1, n2, n3] = nums;
+        statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3} — zapisuję...`;
 
-        statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3}. Zapisuję...`;
-
-        recognition.stop();
-
-        // 🔥 ZAPIS DO GOOGLE SHEETS
-            fetch(WEB_APP_URL, {
-                method: "POST",
-                mode: "cors",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ n1, n2, n3 })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === "OK") {
-                    statusEl.innerHTML = `✅ Zapisano w Google Sheets!`;
-                } else {
-                    statusEl.textContent = "❌ Błąd serwera: " + data.message;
-                }
-            })
-            .catch(err => {
-                statusEl.textContent = "❌ Błąd sieci: " + err.message;
-            });
-
+        sendToSheet(n1, n2, n3);
     };
 
-    recognition.onerror = (e) => {
-        clearTimeout(timeout);
-        statusEl.textContent = "❌ Błąd: " + e.error;
-        recognition.stop();
+    recognition.onerror = (err) => {
+        statusEl.textContent = "❌ Błąd rozpoznawania mowy: " + err.error;
     };
+}
 
-    recognition.onend = () => {
-        if (!recognition.finished) {
-            statusEl.textContent = "🎧 Zakończono nasłuchiwanie.";
-        }
-    };
+function sendToSheet(a, b, c) {
+    fetch(WEBAPP_URL + `?n1=${a}&n2=${b}&n3=${c}`)
+        .then(r => r.text())
+        .then(resp => {
+            statusEl.innerHTML = `✅ Zapisano w arkuszu!<br><br><a href="${resp}" target="_blank">📄 Otwórz arkusz</a>`;
+        })
+        .catch(err => {
+            statusEl.textContent = "❌ Błąd połączenia: " + err;
+        });
 }
 </script>
 

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Notowanie głosowe — odporne na Android</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;background:#fafafa;color:#222;text-align:center;padding:20px}
+button{background:#1a73e8;color:#fff;border:none;padding:18px 32px;font-size:1.4em;border-radius:10px;cursor:pointer}
+#status{margin-top:18px;font-weight:600}
+.small{font-size:0.9em;color:#555;margin-top:8px}
+</style>
+</head>
+<body>
+<h2>🎤 Notowanie głosowe</h2>
+<p class="small">Powiedz trzy liczby, np. "1212 45 89".</p>
+
+<button id="recordBtn">🎙️ Nagraj</button>
+<button id="stopBtn" style="margin-left:12px;display:none;background:#c62828">⏹️ Stop</button>
+
+<div id="status">Gotowe.</div>
+
+<script>
+/* ====== USTAW SWÓJ WEB_APP_URL ====== */
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbygRKibwZynUF1nwbT0otbzQ_ggRuE2PevYBJ3AhwV1H7zQemXtu0206fi-1ijtxTAeSg/exec";
+/* =================================== */
+
+const btn = document.getElementById('recordBtn');
+const stopBtn = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
+
+/* Globals so we can always force-stop them */
+let recognition = null;
+let stream = null;
+let audioCtx = null;
+let forceTimeout = null;
+
+/* Helper: forcibly stop audio tracks and close AudioContext */
+function closeStreamAndAudio() {
+  try {
+    if (stream) {
+      stream.getTracks().forEach(t => {
+        try { t.stop(); } catch (e) {}
+      });
+      stream = null;
+    }
+  } catch(e){ /* ignore */ }
+
+  try {
+    if (audioCtx && typeof audioCtx.close === 'function') {
+      audioCtx.close().catch(()=>{});
+      audioCtx = null;
+    }
+  } catch(e){ /* ignore */ }
+}
+
+/* Helper: full cleanup of recognition + streams */
+function forceCleanup() {
+  // clear timeout
+  if (forceTimeout) { clearTimeout(forceTimeout); forceTimeout = null; }
+
+  // abort/stop recognition (both, to handle different Chrome builds)
+  try { if (recognition) recognition.onresult = null; } catch(e){}
+  try { if (recognition) recognition.onend = null; } catch(e){}
+  try { if (recognition) recognition.onerror = null; } catch(e){}
+  try { if (recognition && typeof recognition.abort === 'function') recognition.abort(); } catch(e){}
+  try { if (recognition && typeof recognition.stop === 'function') recognition.stop(); } catch(e){}
+  recognition = null;
+
+  // stop tracks & audio context
+  closeStreamAndAudio();
+
+  // UI
+  stopBtn.style.display = 'none';
+  btn.disabled = false;
+}
+
+/* Main: start recognition (robust) */
+async function startRec() {
+  // disable button to prevent double-start
+  btn.disabled = true;
+  statusEl.textContent = 'Proszę pozwolić na dostęp do mikrofonu...';
+
+  // request mic and keep stream reference
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    statusEl.textContent = '❌ Brak dostępu do mikrofonu lub użytkownik odmówił.';
+    btn.disabled = false;
+    return;
+  }
+
+  // Try to create AudioContext — will help later to force-close hardware
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // connect stream to audio context (silent node) so browser considers stream active
+    const src = audioCtx.createMediaStreamSource(stream);
+    const gain = audioCtx.createGain(); gain.gain.value = 0;
+    src.connect(gain); gain.connect(audioCtx.destination);
+  } catch (e) {
+    // not critical
+    audioCtx = null;
+  }
+
+  // Check SpeechRecognition availability
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    statusEl.textContent = '❌ Ta przeglądarka nie obsługuje SpeechRecognition.';
+    closeStreamAndAudio();
+    btn.disabled = false;
+    return;
+  }
+
+  // prepare recognition
+  recognition = new SpeechRecognition();
+  recognition.lang = 'pl-PL';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = false; // important on mobile
+
+  // show stop button
+  stopBtn.style.display = 'inline-block';
+
+  // safety timeout: if recognition doesn't finish, force cleanup after 7s
+  forceTimeout = setTimeout(() => {
+    statusEl.textContent = '⌛ Czas minął — kończę nasłuchiwanie.';
+    try { if (recognition && typeof recognition.abort === 'function') recognition.abort(); } catch(e){}
+    closeStreamAndAudio();
+    btn.disabled = false;
+    stopBtn.style.display = 'none';
+  }, 7000); // 7s (tweak if you want)
+
+  // on result
+  recognition.onresult = (ev) => {
+    // mark success, clear timeout
+    if (forceTimeout) { clearTimeout(forceTimeout); forceTimeout = null; }
+
+    const text = ev.results[0][0].transcript || '';
+    const nums = text.match(/\d+/g) || [];
+
+    if (nums.length < 3) {
+      statusEl.textContent = '❌ Nie rozpoznano trzech liczb. Próbuj jeszcze raz.';
+      // cleanup resources
+      try { recognition.stop(); } catch(e){}
+      closeStreamAndAudio();
+      btn.disabled = false;
+      stopBtn.style.display = 'none';
+      return;
+    }
+
+    const [n1, n2, n3] = nums;
+    statusEl.textContent = `Rozpoznano: ${n1}, ${n2}, ${n3} — zapisuję...`;
+
+    // ensure stop/cleanup BEFORE sending (to free mic)
+    try { recognition.stop(); } catch(e){}
+    closeStreamAndAudio();
+
+    // send to backend (POST would be preferable, but your GS supports GET too)
+    fetch(WEB_APP_URL + `?n1=${encodeURIComponent(n1)}&n2=${encodeURIComponent(n2)}&n3=${encodeURIComponent(n3)}`, {
+      method: 'GET',
+      mode: 'cors'
+    })
+    .then(r => r.text())
+    .then(resp => {
+      statusEl.innerHTML = `✅ Zapisano!<br><a href="${resp}" target="_blank">📄 Otwórz arkusz</a>`;
+    })
+    .catch(err => {
+      statusEl.textContent = '❌ Błąd sieci: ' + (err && err.message ? err.message : err);
+    })
+    .finally(() => {
+      btn.disabled = false;
+      stopBtn.style.display = 'none';
+    });
+  };
+
+  recognition.onerror = (err) => {
+    // clear timeout
+    if (forceTimeout) { clearTimeout(forceTimeout); forceTimeout = null; }
+
+    statusEl.textContent = '❌ Błąd rozpoznawania: ' + (err && err.error ? err.error : JSON.stringify(err));
+    // try both stop/abort and close stream
+    try { recognition.abort(); } catch(e){}
+    try { recognition.stop(); } catch(e){}
+    closeStreamAndAudio();
+    btn.disabled = false;
+    stopBtn.style.display = 'none';
+  };
+
+  recognition.onend = () => {
+    // called on normal end; ensure resources are closed
+    if (forceTimeout) { clearTimeout(forceTimeout); forceTimeout = null; }
+    closeStreamAndAudio();
+    btn.disabled = false;
+    stopBtn.style.display = 'none';
+    // if no result arrived, onend happens — inform user
+    if (!statusEl.textContent.includes('Rozpoznano') && !statusEl.textContent.includes('Błąd')) {
+      statusEl.textContent = '🎧 Nasłuchiwanie zakończone (brak wyniku).';
+    }
+  };
+
+  // start recognition; wrap in try because some builds throw on start()
+  try {
+    recognition.start();
+    statusEl.textContent = '🎧 Nasłuchiwanie... Mów teraz.';
+  } catch (e) {
+    statusEl.textContent = '❌ Błąd uruchamiania rozpoznawania: ' + e.message;
+    closeStreamAndAudio();
+    btn.disabled = false;
+    stopBtn.style.display = 'none';
+  }
+}
+
+/* Manual stop button: user can force-stop anytime */
+stopBtn.addEventListener('click', () => {
+  statusEl.textContent = '⏹️ Ręczne zatrzymanie...';
+  try { if (recognition && typeof recognition.abort === 'function') recognition.abort(); } catch(e){}
+  try { if (recognition && typeof recognition.stop === 'function') recognition.stop(); } catch(e){}
+  closeStreamAndAudio();
+  if (forceTimeout) { clearTimeout(forceTimeout); forceTimeout = null; }
+  btn.disabled = false;
+  stopBtn.style.display = 'none';
+});
+
+btn.addEventListener('click', startRec);
+</script>
+</body>
+</html>

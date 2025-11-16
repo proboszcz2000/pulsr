@@ -114,6 +114,7 @@ async function startRec() {
     recognition.lang = "pl-PL";          // język rozpoznawania
     recognition.interimResults = false;  // nie chcemy wyników pośrednich
     recognition.maxAlternatives = 1;     // tylko najlepszy wynik
+    recognition.continuous = false;
 
     // 🔹 Start rozpoznawania
     recognition.start();

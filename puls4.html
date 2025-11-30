@@ -8,7 +8,7 @@
         .step { display: none; margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; background-color: #f9f9f9; }
         .active-step { display: block; }
         button { padding: 10px 15px; margin-top: 10px; margin-right: 5px; }
-        input[type="text"], input[type="number"] { padding: 8px; width: 80%; }
+        input, input[type="number"] { padding: 8px; width: 80%; }
         #app-status { font-weight: bold; color: blue; }
         #recognition-button { font-size: 24px; padding: 40px; border-radius: 50%; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
         #recognition-button:hover { background-color: #45a049; }
@@ -127,13 +127,14 @@
 
         function saveUrlAndNextStep() {
             const urlInput = document.getElementById('script-url-input').value;
+             // Zmieniony warunek walidacji, aby akceptować 'script.google.com'
             if (urlInput && urlInput.startsWith('script.google.com')) {
                 GOOGLE_SHEETS_URL = urlInput;
                 localStorage.setItem('googleSheetsUrl', urlInput);
                 appStatusElement.textContent = 'Konfiguracja zakończona.';
                 goToStep(3);
             } else {
-                alert('Proszę podać prawidłowy URL skryptu Google Apps.');
+                alert('Proszę podać prawidłowy URL skryptu Google Apps. Powinien zaczynać się od script.google.com');
             }
         }
 
@@ -147,7 +148,8 @@
                 document.getElementById('include-date').checked = CONFIG.includeDate;
             }
 
-            if (savedUrl && savedUrl.startsWith('https://')) {
+            // Zmieniony warunek walidacji podczas ładowania strony
+            if (savedUrl && savedUrl.startsWith('script.google.com')) {
                 GOOGLE_SHEETS_URL = savedUrl;
                 document.getElementById('script-url-input').value = savedUrl;
                 appStatusElement.textContent = 'Załadowano zapisane dane. Gotowy do dyktowania.';
@@ -164,6 +166,12 @@
         const outputElement = document.getElementById('output');
         
         function startRecognition() {
+            if (!GOOGLE_SHEETS_URL) {
+                alert("Proszę najpierw skonfigurować URL skryptu w Kroku 2.");
+                goToStep(2);
+                return;
+            }
+
             statusElement.textContent = 'Nasłuchiwanie... Mów teraz...';
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();

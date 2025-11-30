@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Dyktowanie do Google Sheets</title>
+    <title>Dyktowanie do Google Sheets4</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         .step { display: none; margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; background-color: #f9f9f9; }
@@ -20,7 +20,7 @@
 </head>
 <body>
 
-    <h1>Asystent Dyktowania do Google Sheetsssss</h1>
+    <h1>Asystent Dyktowania do Google Sheets</h1>
     <p>Status aplikacji: <strong id="app-status">Ładowanie...</strong></p>
 
     <!-- KROK 1: Konfiguracja początkowa (Liczba pól, Data, Instrukcje) -->
@@ -88,6 +88,8 @@
             includeDate: true
         };
         const appStatusElement = document.getElementById('app-status');
+        const recognitionButton = document.getElementById('recognition-button');
+
 
         // --- FUNKCJE NAWIGACJI MIĘDZY KROKAMI ---
 
@@ -175,6 +177,8 @@
             }
             jsonDebugElement.textContent = 'Brak danych do wysłania.';
             statusElement.textContent = 'Nasłuchiwanie... Mów teraz...';
+            recognitionButton.disabled = true; // Zablokuj przycisk podczas nasłuchiwania
+
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             
@@ -183,15 +187,23 @@
             recognition.maxAlternatives = 1;
 
             recognition.onresult = function(event) {
-                const transcript = event.results[0][0].transcript; // Poprawne pobranie transkrypcji
-                outputElement.textContent = transcript; // Natychmiastowa aktualizacja UI (jak w 1. kodzie)
+                // Jawnie zatrzymaj nasłuchiwanie natychmiast po otrzymaniu wyniku
+                recognition.stop(); 
+                const transcript = event.results[0][0].transcript;
+                outputElement.textContent = transcript; 
                 statusElement.textContent = 'Rozpoznano. Przetwarzanie...';
                 processAndSendToSheets(transcript);
             };
 
             recognition.onerror = function(event) {
                 statusElement.textContent = 'Błąd rozpoznawania: ' + event.error;
+                recognitionButton.disabled = false; // Odblokuj przycisk po błędzie
             };
+            
+            recognition.onend = function() {
+                // To zdarzenie i tak zostanie wywołane po recognition.stop()
+                // Można tu umieścić dodatkową logikę końcową, jeśli potrzebna
+            }
 
             recognition.start();
         }
@@ -213,11 +225,11 @@
                 sendDataToGoogleSheets(dataToSend);
             } else {
                 statusElement.textContent = `Rozpoznano tylko ${words.length} z ${CONFIG.numFields} wymaganych wartości. Spróbuj ponownie.`;
+                recognitionButton.disabled = false; // Odblokuj przycisk, jeśli przetwarzanie się nie powiodło
             }
         }
 
         function sendDataToGoogleSheets(data) {
-            // Wyświetl dane JSON w polu debugowania przed wysłaniem
             jsonDebugElement.textContent = JSON.stringify(data, null, 2); 
             statusElement.textContent = 'Wysyłanie danych do Google Sheets...';
             
@@ -232,13 +244,14 @@
             })
             .then(() => {
                 statusElement.textContent = 'Sukces! Dane dodane do arkusza Google.';
+                recognitionButton.disabled = false; // Odblokuj przycisk po sukcesie
                 setTimeout(() => {
-                    // outputElement.textContent = ''; // Możesz to odkomentować, jeśli chcesz wyczyścić pole po sukcesie
                     statusElement.textContent = 'Gotowy na nowe dyktowanie.';
                 }, 3000);
             })
             .catch(error => {
                 statusElement.textContent = 'Błąd podczas wysyłania danych: ' + error.message;
+                recognitionButton.disabled = false; // Odblokuj przycisk po błędzie wysyłki
             });
         }
         

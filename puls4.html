@@ -15,11 +15,12 @@
         #recognition-button:disabled { background-color: #cccccc; cursor: not-allowed; }
         .center-container { text-align: center; margin-top: 50px; }
         pre { background-color: #eee; padding: 15px; overflow-x: auto; font-family: monospace; }
+        #json-debug-output { background-color: #e0f7fa; border: 1px solid #00acc1; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <h1>Asystent Dyktowania do Google Sheets</h1>
+    <h1>Asystent Dyktowania do Google Sheetsssss</h1>
     <p>Status aplikacji: <strong id="app-status">Ładowanie...</strong></p>
 
     <!-- KROK 1: Konfiguracja początkowa (Liczba pól, Data, Instrukcje) -->
@@ -73,6 +74,8 @@
         
         <p>Status dyktowania: <strong id="status">Gotowy</strong></p>
         <p>Rozpoznany tekst: <span id="output"></span></p>
+        <p>Wysyłane dane (JSON): <pre id="json-debug-output">Brak danych do wysłania.</pre></p>
+
 
         <button onclick="goToStep(1)">Zmień konfigurację</button>
     </div>
@@ -127,7 +130,6 @@
 
         function saveUrlAndNextStep() {
             const urlInput = document.getElementById('script-url-input').value;
-             // Zmieniony warunek walidacji, aby akceptować 'script.google.com'
             if (urlInput && urlInput.startsWith('script.google.com')) {
                 GOOGLE_SHEETS_URL = urlInput;
                 localStorage.setItem('googleSheetsUrl', urlInput);
@@ -148,7 +150,6 @@
                 document.getElementById('include-date').checked = CONFIG.includeDate;
             }
 
-            // Zmieniony warunek walidacji podczas ładowania strony
             if (savedUrl && savedUrl.startsWith('script.google.com')) {
                 GOOGLE_SHEETS_URL = savedUrl;
                 document.getElementById('script-url-input').value = savedUrl;
@@ -164,6 +165,7 @@
 
         const statusElement = document.getElementById('status');
         const outputElement = document.getElementById('output');
+        const jsonDebugElement = document.getElementById('json-debug-output');
         
         function startRecognition() {
             if (!GOOGLE_SHEETS_URL) {
@@ -171,7 +173,7 @@
                 goToStep(2);
                 return;
             }
-
+            jsonDebugElement.textContent = 'Brak danych do wysłania.';
             statusElement.textContent = 'Nasłuchiwanie... Mów teraz...';
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
@@ -181,8 +183,8 @@
             recognition.maxAlternatives = 1;
 
             recognition.onresult = function(event) {
-                const transcript = event.results.transcript;
-                outputElement.textContent = transcript;
+                const transcript = event.results[0][0].transcript; // Poprawne pobranie transkrypcji
+                outputElement.textContent = transcript; // Natychmiastowa aktualizacja UI (jak w 1. kodzie)
                 statusElement.textContent = 'Rozpoznano. Przetwarzanie...';
                 processAndSendToSheets(transcript);
             };
@@ -190,10 +192,6 @@
             recognition.onerror = function(event) {
                 statusElement.textContent = 'Błąd rozpoznawania: ' + event.error;
             };
-
-            recognition.onend = function() {
-                // console.log('Sesja zakończona.');
-            }
 
             recognition.start();
         }
@@ -219,6 +217,8 @@
         }
 
         function sendDataToGoogleSheets(data) {
+            // Wyświetl dane JSON w polu debugowania przed wysłaniem
+            jsonDebugElement.textContent = JSON.stringify(data, null, 2); 
             statusElement.textContent = 'Wysyłanie danych do Google Sheets...';
             
             fetch(GOOGLE_SHEETS_URL, {
@@ -233,7 +233,7 @@
             .then(() => {
                 statusElement.textContent = 'Sukces! Dane dodane do arkusza Google.';
                 setTimeout(() => {
-                    outputElement.textContent = '';
+                    // outputElement.textContent = ''; // Możesz to odkomentować, jeśli chcesz wyczyścić pole po sukcesie
                     statusElement.textContent = 'Gotowy na nowe dyktowanie.';
                 }, 3000);
             })

@@ -10,7 +10,7 @@
         button { padding: 10px 15px; margin-top: 10px; margin-right: 5px; }
         input, input[type="number"] { padding: 8px; width: 80%; }
         #app-status { font-weight: bold; color: blue; }
-        #recognition-button { font-size: 24px; padding: 40px; border-radius: 50%; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        #recognition-button { font-size: 24px; padding: 40px; border-radius: 50%; background-color: #4CAF50; color: white; border: none; cursor: pointer; transition: background-color 0.3s; }
         #recognition-button:hover { background-color: #45a049; }
         #recognition-button:disabled { background-color: #cccccc; cursor: not-allowed; }
         .center-container { text-align: center; margin-top: 50px; }
@@ -20,7 +20,7 @@
 </head>
 <body>
 
-    <h1>Asystent Dyktowania do Google SheetsRSz</h1>
+    <h1>Asystent Dyktowania do Google Sheets 18:50</h1>
     <p>Status aplikacji: <strong id="app-status">Ładowanie...</strong></p>
 
     <!-- KROK 1: Konfiguracja początkowa (Liczba pól, Data, Instrukcje) -->
@@ -132,13 +132,13 @@
 
         function saveUrlAndNextStep() {
             const urlInput = document.getElementById('script-url-input').value;
-            if (urlInput && urlInput.startsWith('script.google.com')) {
+            if (urlInput && urlInput.startsWith('https://script.google.com')) {
                 GOOGLE_SHEETS_URL = urlInput;
                 localStorage.setItem('googleSheetsUrl', urlInput);
                 appStatusElement.textContent = 'Konfiguracja zakończona.';
                 goToStep(3);
             } else {
-                alert('Proszę podać prawidłowy URL skryptu Google Apps. Powinien zaczynać się od script.google.com');
+                alert('Proszę podać prawidłowy URL skryptu Google Apps. Powinien zaczynać się od https://script.google.com');
             }
         }
 
@@ -152,7 +152,7 @@
                 document.getElementById('include-date').checked = CONFIG.includeDate;
             }
 
-            if (savedUrl && savedUrl.startsWith('script.google.com')) {
+            if (savedUrl && savedUrl.startsWith('https://script.google.com')) {
                 GOOGLE_SHEETS_URL = savedUrl;
                 document.getElementById('script-url-input').value = savedUrl;
                 appStatusElement.textContent = 'Załadowano zapisane dane. Gotowy do dyktowania.';
@@ -163,12 +163,58 @@
             }
         }
 
-        // --- FUNKCJE ROZPOZNAWANIA MOWY I WYSYŁKI DANYCH ---
+        // --- FUNKCJE ROZPOZNAWANIA MOWY I WYSYŁKI DANYCH (Poprawione) ---
 
         const statusElement = document.getElementById('status');
         const outputElement = document.getElementById('output');
         const jsonDebugElement = document.getElementById('json-debug-output');
         
+        // Sprawdź kompatybilność przeglądarki
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            // KLUCZOWE POPRAWKI TUTAJ:
+            recognition.lang = 'pl-PL';          // Ustawienie języka polskiego
+            recognition.interimResults = false;   // Czekaj na pełny wynik, a nie częściowy
+            recognition.continuous = false;       // Pojedyncza sesja na kliknięcie przycisku
+            
+            recognition.onstart = function() {
+                statusElement.textContent = 'Nasłuchiwanie... Mów wyraźnie.';
+                recognitionButton.disabled = true;
+                recognitionButton.style.backgroundColor = '#f44336'; // Czerwony podczas nagrywania
+            };
+
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                outputElement.textContent = transcript;
+                statusElement.textContent = 'Rozpoznano. Analizowanie danych...';
+                processTranscript(transcript);
+            };
+
+            recognition.onend = function() {
+                // Status zakończony zostanie nadpisany przez processTranscript/sendData, jeśli sukces
+                if (statusElement.textContent === 'Nasłuchiwanie... Mów wyraźnie.') {
+                     statusElement.textContent = 'Gotowy (nie wykryto mowy).';
+                }
+                recognitionButton.disabled = false;
+                recognitionButton.style.backgroundColor = '#4CAF50'; // Zielony po zakończeniu
+            };
+
+            recognition.onerror = function(event) {
+                statusElement.textContent = 'Błąd rozpoznawania: ' + event.error;
+                recognitionButton.disabled = false;
+                recognitionButton.style.backgroundColor = '#4CAF50';
+                console.error(event.error);
+            };
+
+        } else {
+            // Obsługa braku wsparcia dla API
+            appStatusElement.textContent = 'Błąd: Twoja przeglądarka nie wspiera Web Speech API (wymagany Chrome lub Edge).';
+            recognitionButton.disabled = true;
+        }
+
         function startRecognition() {
             if (!GOOGLE_SHEETS_URL) {
                 alert("Proszę najpierw skonfigurować URL skryptu w Kroku 2.");
@@ -176,89 +222,62 @@
                 return;
             }
             jsonDebugElement.textContent = 'Brak danych do wysłania.';
-            statusElement.textContent = 'Nasłuchiwanie... Mów teraz...';
-            recognitionButton.disabled = true; // Zablokuj przycisk podczas nasłuchiwania
-
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            
-            // Konfiguracja nasłuchiwania (jak w pierwotnym przykładzie)
-            recognition.lang = 'pl-PL'; 
-            recognition.interimResults = false; 
-            recognition.maxAlternatives = 1;
-
-            recognition.onresult = function(event) {
-                // Jawnie zatrzymaj nasłuchiwanie natychmiast po otrzymaniu wyniku
-                recognition.stop(); 
-                const transcript = event.results[0][0].transcript; // Upewniamy się, że bierzemy pierwszy, finalny wynik
-                outputElement.textContent = transcript; // Natychmiastowa aktualizacja UI
-                statusElement.textContent = 'Rozpoznano. Przetwarzanie...';
-                processAndSendToSheets(transcript);
-            };
-
-            recognition.onerror = function(event) {
-                statusElement.textContent = 'Błąd rozpoznawania: ' + event.error;
-                recognitionButton.disabled = false; // Odblokuj przycisk po błędzie
-            };
-            
-            recognition.onend = function() {
-                // To zdarzenie i tak zostanie wywołane po recognition.stop()
-                // Można tu umieścić dodatkową logikę końcową, jeśli potrzebna
+            if (recognition) {
+                recognition.start();
             }
-
-            recognition.start();
         }
 
-        function processAndSendToSheets(text) {
-            const words = text.trim().split(/\s+/);
+        // --- FUNKCJE PRZETWARZANIA TEKSTU I WYSYŁKI DANYCH ---
+
+        function processTranscript(text) {
+            // Prosta logika: zakładamy, że użytkownik podyktował liczby oddzielone spacjami lub przecinkami.
+            // Usuń polskie przecinki i zamień na kropki (jeśli używane są jako separatory dziesiętne)
+            text = text.replace(/,/g, '.'); 
             
-            if (words.length >= CONFIG.numFields) {
-                const dataToSend = {};
-                
+            // Spróbuj wyodrębnić liczby z tekstu za pomocą wyrażenia regularnego
+            const numbers = text.match(/(\d+(\.\d+)?)/g) || [];
+            
+            if (numbers.length >= CONFIG.numFields) {
+                let dataToSend = {};
                 if (CONFIG.includeDate) {
-                    dataToSend['date'] = new Date().toLocaleString('pl-PL');
-                }
-
-                for (let i = 0; i < CONFIG.numFields; i++) {
-                    dataToSend[`val${i + 1}`] = words[i]; 
+                    dataToSend.date = new Date().toISOString(); // Format daty dla GAS
                 }
                 
+                for (let i = 0; i < CONFIG.numFields; i++) {
+                    dataToSend['val' + (i + 1)] = parseFloat(numbers[i]);
+                }
+
                 sendDataToGoogleSheets(dataToSend);
+
             } else {
-                statusElement.textContent = `Rozpoznano tylko ${words.length} z ${CONFIG.numFields} wymaganych wartości. Spróbuj ponownie.`;
-                recognitionButton.disabled = false; // Odblokuj przycisk, jeśli przetwarzanie się nie powiodło
+                statusElement.textContent = `Błąd: Znaleziono tylko ${numbers.length} wartości, oczekiwano ${CONFIG.numFields}. Spróbuj ponownie.`;
             }
         }
 
-        function sendDataToGoogleSheets(data) {
-            jsonDebugElement.textContent = JSON.stringify(data, null, 2); 
+        async function sendDataToGoogleSheets(data) {
+            jsonDebugElement.textContent = JSON.stringify(data, null, 2);
             statusElement.textContent = 'Wysyłanie danych do Google Sheets...';
             
-            fetch(GOOGLE_SHEETS_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                cache: 'no-cache',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            })
-            .then(() => {
-                statusElement.textContent = 'Sukces! Dane dodane do arkusza Google.';
-                recognitionButton.disabled = false; // Odblokuj przycisk po sukcesie
-                setTimeout(() => {
-                    statusElement.textContent = 'Gotowy na nowe dyktowanie.';
-                }, 3000);
-            })
-            .catch(error => {
+            try {
+                const response = await fetch(GOOGLE_SHEETS_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', 
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                statusElement.textContent = 'Sukces! Dane prawdopodobnie zostały zapisane w arkuszu. (Status: no-cors)';
+                
+            } catch (error) {
                 statusElement.textContent = 'Błąd podczas wysyłania danych: ' + error.message;
-                recognitionButton.disabled = false; // Odblokuj przycisk po błędzie wysyłki
-            });
+                console.error('Fetch error:', error);
+            }
         }
-        
-        // Załaduj konfigurację przy starcie strony
-        loadConfig();
 
+        // --- INICJALIZACJA ---
+        window.onload = loadConfig;
     </script>
 </body>
 </html>

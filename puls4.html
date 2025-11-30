@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Dyktowanie do Google Sheets4</title>
+    <title>Dyktowanie do Google Sheets</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         .step { display: none; margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; background-color: #f9f9f9; }
@@ -20,7 +20,7 @@
 </head>
 <body>
 
-    <h1>Asystent Dyktowania do Google Sheets</h1>
+    <h1>Asystent Dyktowania do Google SheetsRSz</h1>
     <p>Status aplikacji: <strong id="app-status">Ładowanie...</strong></p>
 
     <!-- KROK 1: Konfiguracja początkowa (Liczba pól, Data, Instrukcje) -->
@@ -182,6 +182,7 @@
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             
+            // Konfiguracja nasłuchiwania (jak w pierwotnym przykładzie)
             recognition.lang = 'pl-PL'; 
             recognition.interimResults = false; 
             recognition.maxAlternatives = 1;
@@ -189,8 +190,8 @@
             recognition.onresult = function(event) {
                 // Jawnie zatrzymaj nasłuchiwanie natychmiast po otrzymaniu wyniku
                 recognition.stop(); 
-                const transcript = event.results[0][0].transcript;
-                outputElement.textContent = transcript; 
+                const transcript = event.results[0][0].transcript; // Upewniamy się, że bierzemy pierwszy, finalny wynik
+                outputElement.textContent = transcript; // Natychmiastowa aktualizacja UI
                 statusElement.textContent = 'Rozpoznano. Przetwarzanie...';
                 processAndSendToSheets(transcript);
             };

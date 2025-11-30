@@ -1,0 +1,33 @@
+<button onclick="startRecognition()">Rozpocznij Mowę</button>
+<p id="output">Tutaj pojawi się transkrypcja...</p>
+
+<script>
+    function startRecognition() {
+        // Użycie prefiksu webkit dla lepszej kompatybilności mobilnej
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+
+        // Ustawienie języka (np. polski)
+        recognition.lang = 'pl-PL'; 
+        
+        // Czy przerywać po pierwszej wypowiedzi (true) czy kontynuować (false)
+        recognition.interimResults = false; 
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            document.getElementById('output').textContent = transcript;
+            console.log('Wynik: ' + transcript);
+        };
+
+        recognition.onerror = function(event) {
+            console.error('Błąd rozpoznawania mowy: ' + event.error);
+        };
+
+        recognition.onend = function() {
+            console.log('Sesja zakończona.');
+        }
+
+        recognition.start();
+    }
+</script>
